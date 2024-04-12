@@ -1,0 +1,81 @@
+#!/bin/sh
+OY_DB=${OY_DB-oy.db}
+
+oy_lis() {
+	sqlite3 "$OY_DB" '
+    select task.*, task_tag.t
+    from task
+    join task_tag on task_key = task.key
+    join tag on task_tag.tag_key = tag.key
+      and tag.grp = '\''status'\'' and tag.txt = '\''new'\''
+    left join (
+      select task_key done_key
+      from task_tag
+      join tag on tag_key = key and grp = '\''status'\'' and txt = '\''done'\''
+    ) d on done_key = task.key
+    where done_key is null'
+	printf "\e[9m"
+	sqlite3 "$OY_DB" '
+    select task.*, task_tag.t
+    from task
+    join task_tag on task_key = task.key
+    join tag on task_tag.tag_key = tag.key
+      and tag.grp = '\''status'\'' and tag.txt = '\''done'\''
+      and date(task_tag.t) = date('\''now'\'')'
+	printf "\e[0m"
+}
+
+oy_add() {
+	oy_txt=$(echo "$1" | sed "s/'/\\'/g")
+	sqlite3 "$OY_DB" 'insert into task (txt) values ('\'"$oy_txt"\'')'
+	oy_key=$(sqlite3 "$OY_DB" 'select max(key) from task')
+	sqlite3 "$OY_DB" "insert into task_tag (task_key, tag_key) values ($oy_key, 1)"
+}
+
+oy_don() {
+	sqlite3 "$OY_DB" "insert into task_tag (task_key, tag_key) values ($1, 2)"
+}
+
+oy_new() {
+	sqlite3 "$OY_DB" <./new.sql && printf "Created %s\n" "$OY_DB"
+}
+
+oy_bootstrap() {
+	oy_dep_check "sqlite3"
+	[ -e "$OY_DB" ] || oy_new
+}
+
+oy_dep_check() {
+	command -v "$1" >/dev/null && return 0
+	oy_err_exit "Didn't find the utility '$1' on this system"
+}
+
+oy_err_exit() {
+	printf "%s\n" "$1" >&2
+	exit 1
+}
+
+oy_help() {
+	printf 'oy [Option]
+
+Options
+  a|add  <desc>  add a task
+  d|done <#>     mark task as done
+  h|help         print this help
+'
+}
+
+oy_main() {
+	oy_bootstrap
+	[ "$#" -eq 0 ] && oy_lis && exit 0
+	oy_a="$1"
+	shift
+	case "$oy_a" in
+	"a" | "add") oy_add "$1" ;;
+	"d" | "done") oy_don "$1" ;;
+	*) oy_help ;;
+	esac
+}
+
+[ "${0##*/}" = "oy" ] && oy_main "$@"
+true
