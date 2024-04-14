@@ -3,37 +3,45 @@ OY_DB=${OY_DB-oy.db}
 
 oy_lis() {
 	sqlite3 "$OY_DB" '
-    select task.*, task_tag.t
+    select task.*, vw.created_l, vw.tags
     from task
-    join task_tag on task_key = task.key
-    join tag on task_tag.tag_key = tag.key
-      and tag.grp = '\''status'\'' and tag.txt = '\''new'\''
-    left join (
-      select task_key done_key
-      from task_tag
-      join tag on tag_key = key and grp = '\''status'\'' and txt = '\''done'\''
-    ) d on done_key = task.key
-    where done_key is null'
+    join vw_open_tasks vw on vw.task_key = task.key'
 	printf "\e[9m"
 	sqlite3 "$OY_DB" '
-    select task.*, task_tag.t
+    select task.*, vw.created_l, vw.tags
     from task
-    join task_tag on task_key = task.key
-    join tag on task_tag.tag_key = tag.key
-      and tag.grp = '\''status'\'' and tag.txt = '\''done'\''
-      and date(task_tag.t) = date('\''now'\'')'
+    join vw_done_tasks vw on vw.task_key = task.key'
 	printf "\e[0m"
 }
 
 oy_add() {
 	oy_txt=$(echo "$1" | sed "s/'/\\'/g")
-	sqlite3 "$OY_DB" 'insert into task (txt) values ('\'"$oy_txt"\'')'
-	oy_key=$(sqlite3 "$OY_DB" 'select max(key) from task')
-	sqlite3 "$OY_DB" "insert into task_tag (task_key, tag_key) values ($oy_key, 1)"
+	sqlite3 "$OY_DB" '
+  begin transaction;
+  insert into task (txt) values ('\'"$oy_txt"\'');
+	insert into task_tag (txt, task_key, set_key)
+	select 1, max(key), 1 from task
+  union
+	select '\''open'\'', max(key), 2 from task;
+  commit'
+}
+
+oy_edit() {
+	oy_key="$1"
+	oy_txt=$(echo "$2" | sed "s/'/\\'/g")
+	sqlite3 "$OY_DB" '
+  begin transaction;
+  insert into task_tag (txt, cargo, task_key, set_key)
+  select * from vw_next_version
+  where task_key = '"$oy_key"';
+  update task set txt = '\'"$oy_txt"\''
+  where key = '"$oy_key"';
+  commit'
 }
 
 oy_don() {
-	sqlite3 "$OY_DB" "insert into task_tag (task_key, tag_key) values ($1, 2)"
+	sqlite3 "$OY_DB" "insert into task_tag (task_key, set_key, tag_key) values
+  ($1, 2, 3)"
 }
 
 oy_new() {
@@ -59,9 +67,10 @@ oy_help() {
 	printf 'oy [Option]
 
 Options
-  a|add  <desc>  add a task
-  d|done <#>     mark task as done
-  h|help         print this help
+  a|add  <desc>       add a task
+  d|done <#>          mark task as done
+  e|edit <#> <desc>   edit task description
+  h|help              print this help
 '
 }
 
@@ -73,6 +82,7 @@ oy_main() {
 	case "$oy_a" in
 	"a" | "add") oy_add "$1" ;;
 	"d" | "done") oy_don "$1" ;;
+	"e" | "edit") oy_edit "$1" "$2" ;;
 	*) oy_help ;;
 	esac
 }
