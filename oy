@@ -40,8 +40,9 @@ oy_edit() {
 }
 
 oy_don() {
-	sqlite3 "$OY_DB" "insert into task_tag (task_key, set_key, tag_key) values
-  ($1, 2, 3)"
+	sqlite3 "$OY_DB" '
+  insert into task_tag (txt, task_key, set_key) values
+  ('\''done'\'', '"$1"', 2)'
 }
 
 oy_new() {
