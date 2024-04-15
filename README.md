@@ -1,6 +1,6 @@
 oy
 ==
-A stupid-simple POSIX-shell compatible todo list app. Uses `sqlite3`.
+A stupid-simple POSIX-shell todo list app. Uses `sqlite3`.
 
     oy [Option]
     
@@ -10,3 +10,5 @@ A stupid-simple POSIX-shell compatible todo list app. Uses `sqlite3`.
       e|edit <#> <desc>   edit task description
       h|help              print this help
 
+
+Copyright © 2024 David Farrell

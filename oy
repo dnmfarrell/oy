@@ -1,56 +1,51 @@
 #!/bin/sh
-OY_DB=${OY_DB-oy.db}
-
 oy_lis() {
 	sqlite3 "$OY_DB" '
-    select task.*, vw.created_l, vw.tags
-    from task
-    join vw_open_tasks vw on vw.task_key = task.key'
+    select task_key, description, created_l, tags
+    from vw_open_tasks'
 	printf "\e[9m"
 	sqlite3 "$OY_DB" '
-    select task.*, vw.created_l, vw.tags
-    from task
-    join vw_done_tasks vw on vw.task_key = task.key'
+    select task_key, description, created_l, tags
+    from vw_done_tasks'
 	printf "\e[0m"
 }
 
 oy_add() {
 	oy_txt=$(echo "$1" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" '
-  begin transaction;
-  insert into task (txt) values ('\'"$oy_txt"\'');
-	insert into task_tag (txt, task_key, set_key)
-	select 1, max(key), 1 from task
+	insert into task_tag (txt, task_key, set_name, cargo)
+  select 1, coalesce(max(task_key),count(1))+1, '\''version'\'', '\'"$oy_txt"\'' from task_tag
   union
-	select '\''open'\'', max(key), 2 from task;
-  commit'
+  select '\''open'\'', coalesce(max(task_key),count(1))+1, '\''status'\'', null from task_tag'
 }
 
 oy_edit() {
 	oy_key="$1"
 	oy_txt=$(echo "$2" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" '
-  begin transaction;
-  insert into task_tag (txt, cargo, task_key, set_key)
-  select * from vw_next_version
-  where task_key = '"$oy_key"';
-  update task set txt = '\'"$oy_txt"\''
-  where key = '"$oy_key"';
-  commit'
+	insert into task_tag (txt, task_key, set_name, cargo)
+  select *, '\'"$oy_txt"\'' from vw_next_version
+  where task_key = '"$oy_key"
 }
 
 oy_don() {
 	sqlite3 "$OY_DB" '
-  insert into task_tag (txt, task_key, set_key) values
-  ('\''done'\'', '"$1"', 2)'
+	insert into task_tag (txt, task_key, set_name) values
+  ('\''done'\'', '"$1"', '\''status'\'')'
 }
 
 oy_new() {
-	sqlite3 "$OY_DB" <./new.sql && printf "Created %s\n" "$OY_DB"
+	sqlite3 "$OY_DB" <"$OY_DIR/new.sql" && printf "Created %s\n" "$OY_DB" >&2
 }
 
 oy_bootstrap() {
 	oy_dep_check "sqlite3"
+	if [ -z "$OY_DB" ]; then
+		oy_dep_check "readlink"
+		OY_PATH=$(readlink -f "$0")
+		OY_DIR="${OY_PATH%/*}"
+		OY_DB="$OY_DIR/oy.db"
+	fi
 	[ -e "$OY_DB" ] || oy_new
 }
 
