@@ -35,6 +35,7 @@ select  task_key,
         max(t) updated,
         min(lt) created_l,
         max(lt) updated_l,
+        (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
         group_concat(set_name||':'||tag_txt) tags
 from vw_task_tags
 group by 1
@@ -45,10 +46,12 @@ drop view if exists vw_done_tasks;
 create view vw_done_tasks as
 select  task_key,
         group_concat(case when set_name = 'version' then cargo else '' end,'') description,
+        group_concat(case when set_name = 'repeat' and tag_txt = 'on' then cargo else '' end,'') repeat,
         min(t) created,
         max(t) updated,
         min(lt) created_l,
         max(lt) updated_l,
+        (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
         group_concat(set_name||':'||tag_txt) tags
 from vw_task_tags
 group by 1

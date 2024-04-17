@@ -1,13 +1,28 @@
 #!/bin/sh
-oy_lis() {
-	sqlite3 "$OY_DB" '
-    select task_key, description, created_l, tags
-    from vw_open_tasks'
+oy_ls() {
+	oy_ls_open
+	oy_ls_done 0
+}
+
+oy_ls_open() {
+	sqlite3 "$OY_DB" "
+    select  task_key,
+            description,
+            cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
+            tags
+    from vw_open_tasks"
+}
+
+oy_ls_done() {
+	oy_days_ago="$1"
 	printf "\e[9m"
-	sqlite3 "$OY_DB" '
-    select task_key, description, created_l, tags
+	sqlite3 "$OY_DB" "
+    select  task_key,
+            description,
+            cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
+            tags
     from vw_done_tasks
-    where date(created_l) = date('\''now'\'','\''localtime'\'')'
+    where days_old = $oy_days_ago"
 	printf "\e[0m"
 }
 
@@ -61,25 +76,29 @@ oy_err_exit() {
 }
 
 oy_help() {
-	printf 'oy [Option]
+	printf 'oy [command]
 
-Options
+Commands
   a|add  <desc>       add a task
   d|done <#>          mark task as done
   e|edit <#> <desc>   edit task description
+  l|ls                list open tasks and tasks done in the past 24h
   h|help              print this help
+
+The default command is ls.
 '
 }
 
 oy_main() {
 	oy_bootstrap
-	[ "$#" -eq 0 ] && oy_lis && exit 0
+	[ "$#" -eq 0 ] && oy_ls && exit 0
 	oy_a="$1"
 	shift
 	case "$oy_a" in
 	"a" | "add") oy_add "$1" ;;
 	"d" | "done") oy_don "$1" ;;
 	"e" | "edit") oy_edit "$1" "$2" ;;
+	"l" | "ls") oy_ls ;;
 	*) oy_help ;;
 	esac
 }
