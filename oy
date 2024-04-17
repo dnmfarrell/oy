@@ -1,10 +1,10 @@
 #!/bin/sh
-oy_ls() {
-	oy_ls_open
-	oy_ls_done 0
+oy_list() {
+	oy_list_open
+	oy_list_done 0
 }
 
-oy_ls_open() {
+oy_list_open() {
 	sqlite3 "$OY_DB" "
     select  task_key,
             description,
@@ -13,7 +13,7 @@ oy_ls_open() {
     from vw_open_tasks"
 }
 
-oy_ls_done() {
+oy_list_done() {
 	oy_days_ago="$1"
 	printf "\e[9m"
 	sqlite3 "$OY_DB" "
@@ -44,10 +44,16 @@ oy_edit() {
   where task_key = '"$oy_key"
 }
 
-oy_don() {
-	sqlite3 "$OY_DB" '
-	insert into task_tag (txt, task_key, set_name) values
-  ('\''done'\'', '"$1"', '\''status'\'')'
+oy_done() {
+	oy_key="$1"
+	sqlite3 "$OY_DB" "insert into task_tag (txt, task_key, set_name)
+  values ('done', $oy_key, 'status')"
+}
+
+oy_open() {
+	oy_key="$1"
+	sqlite3 "$OY_DB" "insert into task_tag (txt, task_key, set_name)
+  values ('open', $oy_key, 'status')"
 }
 
 oy_new() {
@@ -76,29 +82,29 @@ oy_err_exit() {
 }
 
 oy_help() {
-	printf 'oy [command]
+	printf 'oy [command|list]
 
 Commands
   a|add  <desc>       add a task
   d|done <#>          mark task as done
   e|edit <#> <desc>   edit task description
-  l|ls                list open tasks and tasks done in the past 24h
   h|help              print this help
-
-The default command is ls.
+  l|list              print open tasks and tasks done in the past 24h
+  o|open <#>          mark task as open
 '
 }
 
 oy_main() {
 	oy_bootstrap
-	[ "$#" -eq 0 ] && oy_ls && exit 0
+	[ "$#" -eq 0 ] && oy_list && exit 0
 	oy_a="$1"
 	shift
 	case "$oy_a" in
 	"a" | "add") oy_add "$1" ;;
-	"d" | "done") oy_don "$1" ;;
+	"d" | "done") oy_done "$1" ;;
 	"e" | "edit") oy_edit "$1" "$2" ;;
-	"l" | "ls") oy_ls ;;
+	"l" | "list") oy_list ;;
+	"o" | "open") oy_open "$1" ;;
 	*) oy_help ;;
 	esac
 }
