@@ -6,7 +6,8 @@ oy_lis() {
 	printf "\e[9m"
 	sqlite3 "$OY_DB" '
     select task_key, description, created_l, tags
-    from vw_done_tasks'
+    from vw_done_tasks
+    where date(created_l) = date('\''now'\'','\''localtime'\'')'
 	printf "\e[0m"
 }
 
