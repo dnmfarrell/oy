@@ -64,3 +64,18 @@ select tag_txt+1, task_key, set_name
 from vw_task_tags
 where set_name = 'version'
 ;
+
+drop view if exists vw_repeat_tasks;
+create view vw_repeat_tasks as
+with recursive split(task_key, repeat_pat, rest) as (
+  select task_key, '', repeat||',' as rest
+  from vw_done_tasks
+  where days_old > 0 and repeat != ''
+  union all
+  select task_key, substr(rest, 0, instr(rest, ',')), substr(rest, instr(rest, ',')+1)
+  from split where rest!=''
+)
+select distinct task_key
+from split
+where strftime('%Y-%m-%d %w', 'now', 'localtime') like repeat_pat
+;

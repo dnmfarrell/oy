@@ -7,9 +7,10 @@ Copyright © 2024 David Farrell
     oy [command|list]
     
     Commands
-      a|add  <desc>       add a task
-      d|done <#>          mark task as done
-      e|edit <#> <desc>   edit task description
-      h|help              print this help
-      l|list              print open tasks and tasks done in the past 24h
-      o|open <#>          mark task as open
+      a|add  <desc>                   add a task
+      d|done <#>                      mark task as done
+      e|edit <#> <desc>               edit task description
+      h|help                          print this help
+      l|list                          print open tasks & tasks done in the past 24h
+      o|open <#>                      mark task as open
+      t|tag  <#> <set> <name> [cargo] tag this task

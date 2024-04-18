@@ -1,7 +1,14 @@
 #!/bin/sh
 oy_list() {
+	for task_key in $(oy_repeat_today); do
+		oy_open "$task_key"
+	done
 	oy_list_open
 	oy_list_done 0
+}
+
+oy_repeat_today() {
+	sqlite3 "$OY_DB" 'select task_key from vw_repeat_tasks'
 }
 
 oy_list_open() {
@@ -45,19 +52,36 @@ oy_edit() {
 }
 
 oy_done() {
-	oy_key="$1"
-	sqlite3 "$OY_DB" "insert into task_tag (txt, task_key, set_name)
-  values ('done', $oy_key, 'status')"
+	oy_tag "$1" 'status' 'done'
 }
 
 oy_open() {
-	oy_key="$1"
-	sqlite3 "$OY_DB" "insert into task_tag (txt, task_key, set_name)
-  values ('open', $oy_key, 'status')"
+	oy_tag "$1" 'status' 'open'
+}
+
+oy_repeat() {
+	oy_tag "$1" 'repeat' 'on' "$2"
 }
 
 oy_new() {
 	sqlite3 "$OY_DB" <"$OY_DIR/new.sql" && printf "Created %s\n" "$OY_DB" >&2
+}
+
+oy_tag() {
+	if [ "$#" -ge 3 ]; then
+		oy_set=$(echo "$2" | sed "s/'/\\'/g")
+		oy_txt=$(echo "$3" | sed "s/'/\\'/g")
+		if [ "$#" = "4" ]; then
+			oy_car=$(echo "$4" | sed "s/'/\\'/g")
+			sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt, cargo)
+      values ('"$1"', '\'"$oy_set"\'', '\'"$oy_txt"\'', '\'"$oy_car"\'')'
+		else
+			sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt)
+      values ('"$1"', '\'"$oy_set"\'', '\'"$oy_txt"\'')'
+		fi
+	else
+		oy_err_exit 'tag needs at least 3 arguments'
+	fi
 }
 
 oy_bootstrap() {
@@ -85,12 +109,13 @@ oy_help() {
 	printf 'oy [command|list]
 
 Commands
-  a|add  <desc>       add a task
-  d|done <#>          mark task as done
-  e|edit <#> <desc>   edit task description
-  h|help              print this help
-  l|list              print open tasks and tasks done in the past 24h
-  o|open <#>          mark task as open
+  a|add  <desc>                   add a task
+  d|done <#>                      mark task as done
+  e|edit <#> <desc>               edit task description
+  h|help                          print this help
+  l|list                          print open tasks & tasks done in the past 24h
+  o|open <#>                      mark task as open
+  t|tag  <#> <set> <name> [cargo] tag this task
 '
 }
 
@@ -105,6 +130,7 @@ oy_main() {
 	"e" | "edit") oy_edit "$1" "$2" ;;
 	"l" | "list") oy_list ;;
 	"o" | "open") oy_open "$1" ;;
+	"t" | "tag") oy_tag "$@" ;;
 	*) oy_help ;;
 	esac
 }
