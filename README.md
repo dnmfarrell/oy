@@ -11,6 +11,6 @@ Copyright © 2024 David Farrell
       d|done <#>                      mark task as done
       e|edit <#> <desc>               edit task description
       h|help                          print this help
-      l|list                          print open tasks & tasks done in the past 24h
+      l|list                          print open tasks & tasks done today
       o|open <#>                      mark task as open
       t|tag  <#> <set> <name> [cargo] tag this task

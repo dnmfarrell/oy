@@ -33,29 +33,11 @@ select  task_key,
         group_concat(case when set_name = 'version' then cargo else '' end,'') description,
         min(t) created,
         max(t) updated,
-        min(lt) created_l,
-        max(lt) updated_l,
         (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
         group_concat(set_name||':'||tag_txt) tags
 from vw_task_tags
 group by 1
 having sum(case when set_name = 'status' and tag_txt = 'open' then 1 else 0 end) = 1
-;
-
-drop view if exists vw_done_tasks;
-create view vw_done_tasks as
-select  task_key,
-        group_concat(case when set_name = 'version' then cargo else '' end,'') description,
-        group_concat(case when set_name = 'repeat' and tag_txt = 'on' then cargo else '' end,'') repeat,
-        min(t) created,
-        max(t) updated,
-        min(lt) created_l,
-        max(lt) updated_l,
-        (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
-        group_concat(set_name||':'||tag_txt) tags
-from vw_task_tags
-group by 1
-having sum(case when set_name = 'status' and tag_txt = 'done' then 1 else 0 end) = 1
 ;
 
 drop view if exists vw_next_version;
@@ -65,12 +47,26 @@ from vw_task_tags
 where set_name = 'version'
 ;
 
+drop view if exists vw_done_tasks;
+create view vw_done_tasks as
+select  task_key,
+        group_concat(case when set_name = 'version' then cargo else '' end,'') description,
+        group_concat(case when set_name = 'repeat' and tag_txt = 'on' then cargo else '' end,'') repeat,
+        min(t) created,
+        max(case when set_name = 'status' then t else 0 end) completed,
+        (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
+        group_concat(set_name||':'||tag_txt) tags
+from vw_task_tags
+group by 1
+having sum(case when set_name = 'status' and tag_txt = 'done' then 1 else 0 end) = 1
+;
+
 drop view if exists vw_repeat_tasks;
 create view vw_repeat_tasks as
 with recursive split(task_key, repeat_pat, rest) as (
   select task_key, '', repeat||',' as rest
   from vw_done_tasks
-  where days_old > 0 and repeat != ''
+  where date(completed, 'localtime') != date('now', 'localtime') and repeat != ''
   union all
   select task_key, substr(rest, 0, instr(rest, ',')), substr(rest, instr(rest, ',')+1)
   from split where rest!=''

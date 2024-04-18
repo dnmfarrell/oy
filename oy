@@ -4,7 +4,7 @@ oy_list() {
 		oy_open "$task_key"
 	done
 	oy_list_open
-	oy_list_done 0
+	oy_list_done
 }
 
 oy_repeat_today() {
@@ -21,7 +21,6 @@ oy_list_open() {
 }
 
 oy_list_done() {
-	oy_days_ago="$1"
 	printf "\e[9m"
 	sqlite3 "$OY_DB" "
     select  task_key,
@@ -29,7 +28,7 @@ oy_list_done() {
             cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
             tags
     from vw_done_tasks
-    where days_old = $oy_days_ago"
+    where date(completed, 'localtime') = date('now', 'localtime')"
 	printf "\e[0m"
 }
 
@@ -113,7 +112,7 @@ Commands
   d|done <#>                      mark task as done
   e|edit <#> <desc>               edit task description
   h|help                          print this help
-  l|list                          print open tasks & tasks done in the past 24h
+  l|list                          print open tasks & tasks done today
   o|open <#>                      mark task as open
   t|tag  <#> <set> <name> [cargo] tag this task
 '
@@ -125,11 +124,11 @@ oy_main() {
 	oy_a="$1"
 	shift
 	case "$oy_a" in
-	"a" | "add") oy_add "$1" ;;
-	"d" | "done") oy_done "$1" ;;
-	"e" | "edit") oy_edit "$1" "$2" ;;
+	"a" | "add") oy_add "$@" ;;
+	"d" | "done") oy_done "$@" ;;
+	"e" | "edit") oy_edit "$@" ;;
 	"l" | "list") oy_list ;;
-	"o" | "open") oy_open "$1" ;;
+	"o" | "open") oy_open "$@" ;;
 	"t" | "tag") oy_tag "$@" ;;
 	*) oy_help ;;
 	esac
