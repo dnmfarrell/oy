@@ -1,34 +1,23 @@
 #!/bin/sh
 oy_list() {
-	for task_key in $(oy_repeat_today); do
+	for task_key in $(sqlite3 "$OY_DB" 'select task_key from vw_repeat_tasks'); do
 		oy_open "$task_key"
 	done
-	oy_list_open
-	oy_list_done
-}
-
-oy_repeat_today() {
-	sqlite3 "$OY_DB" 'select task_key from vw_repeat_tasks'
+	if [ -z "$1" ]; then
+		oy_list_open
+	fi
+	oy_list_done "${1-0}"
 }
 
 oy_list_open() {
-	sqlite3 "$OY_DB" "
-    select  task_key,
-            description,
-            cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
-            tags
-    from vw_open_tasks"
+	sqlite3 "$OY_DB" 'select * from vw_open_tasks'
 }
 
 oy_list_done() {
 	printf "\e[9m"
-	sqlite3 "$OY_DB" "
-    select  task_key,
-            description,
-            cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
-            tags
-    from vw_done_tasks
-    where date(completed, 'localtime') = date('now', 'localtime')"
+	sqlite3 "$OY_DB" "select task_key,description,age,props
+	from vw_done_tasks
+	where date(completed, 'localtime') = date('now', 'localtime', '-$1 days')"
 	printf "\e[0m"
 }
 
@@ -36,9 +25,11 @@ oy_add() {
 	oy_txt=$(echo "$1" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" '
 	insert into task_tag (txt, task_key, set_name, cargo)
-  select 1, coalesce(max(task_key),count(1))+1, '\''version'\'', '\'"$oy_txt"\'' from task_tag
+  select 1, coalesce(max(task_key),count(1))+1,'\''version'\'', '\'"$oy_txt"\''
+  from task_tag
   union
-  select '\''open'\'', coalesce(max(task_key),count(1))+1, '\''status'\'', null from task_tag'
+  select '\''open'\'', coalesce(max(task_key),count(1))+1, '\''status'\'', null
+  from task_tag'
 }
 
 oy_edit() {
@@ -51,22 +42,23 @@ oy_edit() {
 }
 
 oy_done() {
-	oy_tag "$1" 'status' 'done'
+	for key in "$@"; do oy_prop "$key" 'status' 'done'; done
 }
 
 oy_open() {
-	oy_tag "$1" 'status' 'open'
+	oy_prop "$1" 'status' 'open'
 }
 
 oy_repeat() {
-	oy_tag "$1" 'repeat' 'on' "$2"
+	oy_prop "$1" 'repeat' 'on' "$2"
 }
 
 oy_new() {
-	sqlite3 "$OY_DB" <"$OY_DIR/new.sql" && printf "Created %s\n" "$OY_DB" >&2
+	sqlite3 "$OY_DB" <"$OY_DIR/tables.sql" &&
+		sqlite3 "$OY_DB" <"$OY_DIR/views.sql" && printf "Created %s\n" "$OY_DB" >&2
 }
 
-oy_tag() {
+oy_prop() {
 	if [ "$#" -ge 3 ]; then
 		oy_set=$(echo "$2" | sed "s/'/\\'/g")
 		oy_txt=$(echo "$3" | sed "s/'/\\'/g")
@@ -79,18 +71,36 @@ oy_tag() {
       values ('"$1"', '\'"$oy_set"\'', '\'"$oy_txt"\'')'
 		fi
 	else
-		oy_err_exit 'tag needs at least 3 arguments'
+		oy_err_exit 'prop needs at least 3 arguments'
 	fi
+}
+
+oy_tag() {
+	[ "$#" -lt 2 ] && oy_err_exit 'tag requires at least 2 arguments'
+	if [ "$1" = "del" ]; then
+		shift
+		oy_key="$1"
+		oy_qry_key="-1"
+	else
+		oy_key="$1"
+		oy_qry_key="$1"
+	fi
+	shift
+	oy_new_tags=$({
+		sqlite3 "$OY_DB" "select tag from vw_tags where task_key=$oy_qry_key"
+		for tag in "$@"; do
+			echo "$tag"
+		done
+	} | sort -u | awk 'BEGIN { sep="" } { printf "%s%s", sep, $0; sep="," }
+    END { printf "\n" }') && oy_prop "$oy_key" 'tags' "$oy_new_tags"
 }
 
 oy_bootstrap() {
 	oy_dep_check "sqlite3"
-	if [ -z "$OY_DB" ]; then
-		oy_dep_check "readlink"
-		OY_PATH=$(readlink -f "$0")
-		OY_DIR="${OY_PATH%/*}"
-		OY_DB="$OY_DIR/oy.db"
-	fi
+	oy_dep_check "readlink"
+	OY_PATH=$(readlink -f "$0")
+	OY_DIR="${OY_PATH%/*}"
+	OY_DB="${OY_DB-$OY_DIR/oy.db}"
 	[ -e "$OY_DB" ] || oy_new
 }
 
@@ -108,13 +118,15 @@ oy_help() {
 	printf 'oy [command|list]
 
 Commands
-  a|add  <desc>                   add a task
-  d|done <#>                      mark task as done
-  e|edit <#> <desc>               edit task description
-  h|help                          print this help
-  l|list                          print open tasks & tasks done today
-  o|open <#>                      mark task as open
-  t|tag  <#> <set> <name> [cargo] tag this task
+  a|add  <desc>                      add a task
+  d|done <#> [# ...]                 mark task(s) as done
+  e|edit <#> <desc>                  edit task description
+  h|help                             print this help
+  l|list [#]                         print open & tasks done today or -# days
+                                     ago
+  o|open <#> [# ...]                 re-open task(s)
+  p|prop <#> <set> <name> [cargo]    add/update a property of a task
+  t|tag  [del] <#> <name> [name ...] delete all and/or add tag(s) to a task
 '
 }
 
@@ -127,8 +139,9 @@ oy_main() {
 	"a" | "add") oy_add "$@" ;;
 	"d" | "done") oy_done "$@" ;;
 	"e" | "edit") oy_edit "$@" ;;
-	"l" | "list") oy_list ;;
+	"l" | "list") oy_list "$@" ;;
 	"o" | "open") oy_open "$@" ;;
+	"p" | "prop") oy_prop "$@" ;;
 	"t" | "tag") oy_tag "$@" ;;
 	*) oy_help ;;
 	esac
