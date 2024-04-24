@@ -1,8 +1,5 @@
 #!/bin/sh
 oy_list() {
-	for task_key in $(sqlite3 "$OY_DB" 'select task_key from vw_repeat_tasks'); do
-		oy_open "$task_key"
-	done
 	if [ -z "$1" ]; then
 		sqlite3 "$OY_DB" 'select * from vw_open_tasks'
 	fi
@@ -22,11 +19,11 @@ oy_compact() {
 
 oy_add() {
 	[ "$#" -eq 0 ] && oy_err_exit 'add requires at least 1 task description'
-	for t in "$@"; do
-		oy_txt=$(echo "$t" | sed "s/'/\\'/g")
+	for OY_D in "$@"; do
+		OY_DESC=$(echo "$OY_D" | sed "s/'/\\'/g")
 		sqlite3 "$OY_DB" '
 	insert into task_tag (txt, task_key, set_name, cargo)
-  select 1, coalesce(max(task_key),count(1))+1,'\''version'\'', '\'"$oy_txt"\''
+	select 1, coalesce(max(task_key),count(1))+1,'\''version'\'', '\'"$OY_DESC"\''
   from task_tag
   union
   select '\''open'\'', coalesce(max(task_key),count(1))+1, '\''status'\'', null
@@ -36,22 +33,22 @@ oy_add() {
 
 oy_edit() {
 	[ "$#" -eq 2 ] && oy_err_exit 'edit needs a task key and description'
-	oy_key="$1"
-	oy_txt=$(echo "$2" | sed "s/'/\\'/g")
+	OY_KEY="$1"
+	OY_DESC=$(echo "$2" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" '
 	insert into task_tag (txt, task_key, set_name, cargo)
-  select *, '\'"$oy_txt"\'' from vw_next_version
-  where task_key = '"$oy_key"
+  select *, '\'"$OY_DESC"\'' from vw_next_version
+  where task_key = '"$OY_KEY"
 }
 
 oy_done() {
 	[ "$#" -eq 0 ] && oy_err_exit 'done needs at least 1 task key'
-	for key in "$@"; do oy_prop "$key" 'status' 'done'; done
+	for OY_KEY in "$@"; do oy_prop "$OY_KEY" 'status' 'done'; done
 }
 
 oy_open() {
 	[ "$#" -eq 0 ] && oy_err_exit 'open needs at least 1 task key'
-	for key in "$@"; do oy_prop "$key" 'status' 'open'; done
+	for OY_KEY in "$@"; do oy_prop "$OY_KEY" 'status' 'open'; done
 }
 
 oy_new() {
@@ -60,40 +57,33 @@ oy_new() {
 }
 
 oy_prop() {
-	if [ "$#" -ge 3 ]; then
-		oy_set=$(echo "$2" | sed "s/'/\\'/g")
-		oy_txt=$(echo "$3" | sed "s/'/\\'/g")
-		if [ "$#" = "4" ]; then
-			oy_car=$(echo "$4" | sed "s/'/\\'/g")
-			sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt, cargo)
-      values ('"$1"', '\'"$oy_set"\'', '\'"$oy_txt"\'', '\'"$oy_car"\'')'
-		else
-			sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt)
-      values ('"$1"', '\'"$oy_set"\'', '\'"$oy_txt"\'')'
-		fi
-	else
-		oy_err_exit 'prop needs 3 or 4 arguments'
-	fi
+	[ "$#" -lt 3 ] && oy_err_exit 'prop needs 3 or 4 arguments'
+	OY_SET=$(echo "$2" | sed "s/'/\\'/g")
+	OY_TXT=$(echo "$3" | sed "s/'/\\'/g")
+	OY_CAR=$(echo "$4" | sed "s/'/\\'/g")
+	sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt, cargo)
+	  values ('"$1"', '\'"$OY_SET"\'', '\'"$OY_TXT"\'',
+		nullif('\'"$OY_CAR"\'','\'\''))'
 }
 
 oy_tag() {
 	[ "$#" -lt 2 ] && oy_err_exit 'tag requires at least 2 arguments'
 	if [ "$1" = "del" ]; then
 		shift
-		oy_key="$1"
-		oy_qry_key="-1"
+		OY_KEY="$1"
+		OY_QRY_KEY="-1"
 	else
-		oy_key="$1"
-		oy_qry_key="$1"
+		OY_KEY="$1"
+		OY_QRY_KEY="$1"
 	fi
 	shift
-	oy_new_tags=$({
-		sqlite3 "$OY_DB" "select tag from vw_tags where task_key=$oy_qry_key"
-		for tag in "$@"; do
-			echo "$tag"
+	OY_NEW_TAGS=$({
+		sqlite3 "$OY_DB" "select tag from vw_tags where task_key=$OY_QRY_KEY"
+		for OY_TAG in "$@"; do
+			echo "$OY_TAG"
 		done
 	} | sort -u | awk 'BEGIN { sep="" } { printf "%s%s", sep, $0; sep="," }
-    END { printf "\n" }') && oy_prop "$oy_key" 'tags' "$oy_new_tags"
+    END { printf "\n" }') && oy_prop "$OY_KEY" 'tags' "$OY_NEW_TAGS"
 }
 
 oy_bootstrap() {
@@ -134,10 +124,13 @@ Commands
 
 oy_main() {
 	oy_bootstrap
+	for OY_KEY in $(sqlite3 "$OY_DB" 'select task_key from vw_repeat_tasks'); do
+		oy_open "$OY_KEY"
+	done
 	[ "$#" -eq 0 ] && oy_list && exit 0
-	oy_a="$1"
+	OY_COM="$1"
 	shift
-	case "$oy_a" in
+	case "$OY_COM" in
 	"a" | "add") oy_add "$@" ;;
 	"compact") oy_compact ;;
 	"d" | "done") oy_done "$@" ;;
