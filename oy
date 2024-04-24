@@ -1,12 +1,11 @@
 #!/bin/sh
 oy_list() {
-	if [ -z "$1" ]; then
-		sqlite3 "$OY_DB" 'select * from vw_open_tasks'
-	fi
+	OY_DAYS_AGO=${1-0}
+	[ "$OY_DAYS_AGO" -eq 0 ] && sqlite3 "$OY_DB" 'select * from vw_open_tasks'
 	printf "\e[9m"
 	sqlite3 "$OY_DB" "select task_key,description,age,props
 	from vw_done_tasks
-	where date(completed, 'localtime') = date('now', 'localtime', '-${1-0} days')"
+	where date(completed, 'localtime') = date('now', 'localtime', '-$OY_DAYS_AGO days')"
 	printf "\e[0m"
 }
 
@@ -70,12 +69,11 @@ oy_tag() {
 	[ "$#" -lt 2 ] && oy_err_exit 'tag requires at least 2 arguments'
 	if [ "$1" = "del" ]; then
 		shift
-		OY_KEY="$1"
 		OY_QRY_KEY="-1"
 	else
-		OY_KEY="$1"
 		OY_QRY_KEY="$1"
 	fi
+	OY_KEY="$1"
 	shift
 	OY_NEW_TAGS=$({
 		sqlite3 "$OY_DB" "select tag from vw_tags where task_key=$OY_QRY_KEY"
