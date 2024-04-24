@@ -1,6 +1,7 @@
-drop view if exists vw_task_tags;
-create view vw_task_tags as
-select  tt.task_key,
+drop view if exists vw_task_tags_last;
+create view vw_task_tags_last as
+select  tt.key,
+        tt.task_key,
         tt.t,
         datetime(tt.t, 'localtime') lt,
         tt.set_name,
@@ -14,6 +15,30 @@ on st.task_key = tt.task_key
 where st.task_key is null
 order by tt.task_key, tt.set_name;
 
+drop view if exists vw_task_tags_first;
+create view vw_task_tags_first as
+select  tt.key,
+        tt.task_key,
+        tt.t,
+        datetime(tt.t, 'localtime') lt,
+        tt.set_name,
+        tt.txt tag_txt,
+        tt.cargo
+from task_tag tt
+left join task_tag st
+on st.task_key = tt.task_key
+  and st.set_name = tt.set_name
+  and st.key < tt.key
+where st.task_key is null
+order by tt.task_key, tt.set_name;
+
+drop view if exists vw_task_tags_first_and_last;
+create view vw_task_tags_first_and_last as
+select key from vw_task_tags_first
+union
+select key from vw_task_tags_last
+order by key;
+
 drop view if exists vw_tasks;
 create view vw_tasks as
 select  task_key,
@@ -25,7 +50,7 @@ select  task_key,
         max(case when set_name = 'status' and tag_txt = 'done' then t else null end) completed,
         (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
         group_concat(set_name||':'||tag_txt) props
-from vw_task_tags
+from vw_task_tags_last
 where tag_txt != ''
 group by 1
 order by priority desc;
@@ -52,7 +77,7 @@ where completed is not null;
 drop view if exists vw_next_version;
 create view vw_next_version as
 select tag_txt+1, task_key, set_name
-from vw_task_tags
+from vw_task_tags_last
 where set_name = 'version';
 
 drop view if exists vw_repeat_tasks;
@@ -74,7 +99,7 @@ drop view if exists vw_tags;
 create view vw_tags as
 with recursive split(task_key, tag, rest) as (
   select task_key, '', tag_txt||',' as rest
-  from vw_task_tags
+  from vw_task_tags_last
   where set_name = 'tags'
   union all
   select task_key, substr(rest, 0, instr(rest, ',')), substr(rest, instr(rest, ',')+1)

@@ -9,6 +9,13 @@ oy_list() {
 	oy_list_done "${1-0}"
 }
 
+oy_compact() {
+	sqlite3 "$OY_DB" 'delete from task_tag where ROWID in (
+		select a.ROWID from task_tag a
+		left join vw_task_tags_first_and_last v on v.key = a.key
+		where v.key is null)'
+}
+
 oy_list_open() {
 	sqlite3 "$OY_DB" 'select * from vw_open_tasks'
 }
@@ -119,6 +126,7 @@ oy_help() {
 
 Commands
   a|add  <desc>                      add a task
+  c|compact                          delete all intermediate task data
   d|done <#> [# ...]                 mark task(s) as done
   e|edit <#> <desc>                  edit task description
   h|help                             print this help
@@ -137,6 +145,7 @@ oy_main() {
 	shift
 	case "$oy_a" in
 	"a" | "add") oy_add "$@" ;;
+	"c" | "compact") oy_compact "$@" ;;
 	"d" | "done") oy_done "$@" ;;
 	"e" | "edit") oy_edit "$@" ;;
 	"l" | "list") oy_list "$@" ;;

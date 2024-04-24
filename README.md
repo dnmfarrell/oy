@@ -16,6 +16,7 @@ Usage
     
     Commands
       a|add  <desc>                      add a task
+      c|compact                          delete all intermediate task data
       d|done <#> [# ...]                 mark task(s) as done
       e|edit <#> <desc>                  edit task description
       h|help                             print this help
