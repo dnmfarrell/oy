@@ -4,9 +4,13 @@ oy_list() {
 		oy_open "$task_key"
 	done
 	if [ -z "$1" ]; then
-		oy_list_open
+		sqlite3 "$OY_DB" 'select * from vw_open_tasks'
 	fi
-	oy_list_done "${1-0}"
+	printf "\e[9m"
+	sqlite3 "$OY_DB" "select task_key,description,age,props
+	from vw_done_tasks
+	where date(completed, 'localtime') = date('now', 'localtime', '-${1-0} days')"
+	printf "\e[0m"
 }
 
 oy_compact() {
@@ -16,30 +20,22 @@ oy_compact() {
 		where v.key is null)'
 }
 
-oy_list_open() {
-	sqlite3 "$OY_DB" 'select * from vw_open_tasks'
-}
-
-oy_list_done() {
-	printf "\e[9m"
-	sqlite3 "$OY_DB" "select task_key,description,age,props
-	from vw_done_tasks
-	where date(completed, 'localtime') = date('now', 'localtime', '-$1 days')"
-	printf "\e[0m"
-}
-
 oy_add() {
-	oy_txt=$(echo "$1" | sed "s/'/\\'/g")
-	sqlite3 "$OY_DB" '
+	[ "$#" -eq 0 ] && oy_err_exit 'add requires at least 1 task description'
+	for t in "$@"; do
+		oy_txt=$(echo "$t" | sed "s/'/\\'/g")
+		sqlite3 "$OY_DB" '
 	insert into task_tag (txt, task_key, set_name, cargo)
   select 1, coalesce(max(task_key),count(1))+1,'\''version'\'', '\'"$oy_txt"\''
   from task_tag
   union
   select '\''open'\'', coalesce(max(task_key),count(1))+1, '\''status'\'', null
   from task_tag'
+	done
 }
 
 oy_edit() {
+	[ "$#" -eq 2 ] && oy_err_exit 'edit needs a task key and description'
 	oy_key="$1"
 	oy_txt=$(echo "$2" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" '
@@ -49,15 +45,13 @@ oy_edit() {
 }
 
 oy_done() {
+	[ "$#" -eq 0 ] && oy_err_exit 'done needs at least 1 task key'
 	for key in "$@"; do oy_prop "$key" 'status' 'done'; done
 }
 
 oy_open() {
-	oy_prop "$1" 'status' 'open'
-}
-
-oy_repeat() {
-	oy_prop "$1" 'repeat' 'on' "$2"
+	[ "$#" -eq 0 ] && oy_err_exit 'open needs at least 1 task key'
+	for key in "$@"; do oy_prop "$key" 'status' 'open'; done
 }
 
 oy_new() {
@@ -78,7 +72,7 @@ oy_prop() {
       values ('"$1"', '\'"$oy_set"\'', '\'"$oy_txt"\'')'
 		fi
 	else
-		oy_err_exit 'prop needs at least 3 arguments'
+		oy_err_exit 'prop needs 3 or 4 arguments'
 	fi
 }
 
@@ -125,8 +119,8 @@ oy_help() {
 	printf 'oy [command|list]
 
 Commands
-  a|add  <desc>                      add a task
-  c|compact                          delete all intermediate task data
+  a|add  <desc> [desc ...]           add task(s)
+  compact                            delete all intermediate task data
   d|done <#> [# ...]                 mark task(s) as done
   e|edit <#> <desc>                  edit task description
   h|help                             print this help
@@ -145,7 +139,7 @@ oy_main() {
 	shift
 	case "$oy_a" in
 	"a" | "add") oy_add "$@" ;;
-	"c" | "compact") oy_compact "$@" ;;
+	"compact") oy_compact ;;
 	"d" | "done") oy_done "$@" ;;
 	"e" | "edit") oy_edit "$@" ;;
 	"l" | "list") oy_list "$@" ;;
