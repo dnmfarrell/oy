@@ -48,31 +48,12 @@ select  task_key,
         min(t) created,
         max(t) updated,
         max(case when set_name = 'status' and tag_txt = 'done' then t else null end) completed,
-        (strftime('%s', 'now') - strftime('%s',max(t))) / 86400 as days_old,
-        group_concat(set_name||':'||tag_txt) props
+        group_concat(case when set_name != 'tags' then set_name||':'||tag_txt else null end) props,
+        group_concat(case when set_name = 'tags' then tag_txt else '' end,'') tags
 from vw_task_tags_last
 where tag_txt != ''
 group by 1
 order by priority desc;
-
-drop view if exists vw_open_tasks;
-create view vw_open_tasks as
-select  task_key,
-        description,
-        cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
-        props
-from vw_tasks
-where completed is null;
-
-drop view if exists vw_done_tasks;
-create view vw_done_tasks as
-select  task_key,
-        description,
-        completed,
-        cast(days_old as varchar) || case when days_old = 1 then ' day' else ' days' end as age,
-        props
-from vw_tasks
-where completed is not null;
 
 drop view if exists vw_next_version;
 create view vw_next_version as

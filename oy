@@ -1,12 +1,19 @@
 #!/bin/sh
 oy_list() {
-	OY_DAYS_AGO=${1-0}
-	[ "$OY_DAYS_AGO" -eq 0 ] && sqlite3 "$OY_DB" 'select * from vw_open_tasks'
-	printf "\e[9m"
-	sqlite3 "$OY_DB" "select task_key,description,age,props
-	from vw_done_tasks
-	where date(completed, 'localtime') = date('now', 'localtime', '-$OY_DAYS_AGO days')"
-	printf "\e[0m"
+	OY_DAYS_AGO=0
+	while getopts "d:p:t:" OY_LS_ARG; do
+		case "$OY_LS_ARG" in
+		"d") OY_DAYS_AGO="$OPTARG" ;;
+		"p") OY_PROP="and t.set_name = '${OPTARG%:*}' and t.tag_txt = '${OPTARG#*:}'" ;;
+		"t") OY_TAG="join vw_tags vt on vt.task_key = v.task_key and vt.tag = '$OPTARG'" ;;
+		"?") oy_help && exit 1 ;;
+		esac
+	done
+	sqlite3 "$OY_DB" "select distinct v.task_key, v.description, v.props, v.tags
+	from vw_tasks v
+	$OY_TAG
+	join vw_task_tags_last t on t.task_key = v.task_key
+	where date(coalesce(completed, datetime('now')), 'localtime') = date('now', 'localtime', '-$OY_DAYS_AGO days') $OY_PROP order by 1 desc"
 }
 
 oy_compact() {
@@ -107,16 +114,15 @@ oy_help() {
 	printf 'oy [command|list]
 
 Commands
-  a|add  <desc> [desc ...]           add task(s)
-  compact                            delete all intermediate task data
-  d|done <#> [# ...]                 mark task(s) as done
-  e|edit <#> <desc>                  edit task description
-  h|help                             print this help
-  l|list [#]                         print open & tasks done today or -# days
-                                     ago
-  o|open <#> [# ...]                 re-open task(s)
-  p|prop <#> <set> <name> [cargo]    add/update a property of a task
-  t|tag  [del] <#> <name> [name ...] delete all and/or add tag(s) to a task
+  a|add  <desc> [desc ...]                add task(s)
+  compact                                 delete all intermediate task data
+  d|done <#> [# ...]                      mark task(s) as done
+  e|edit <#> <desc>                       edit task description
+  h|help                                  print this help
+  l|list [-d #] [-p name:value] [-t name] print tasks
+  o|open <#> [# ...]                      re-open task(s)
+  p|prop <#> <set> <name> [cargo]         add/update a property of a task
+  t|tag  [del] <#> <name> [name ...]      delete all and/or add tag(s) to a task
 '
 }
 
