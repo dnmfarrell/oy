@@ -49,7 +49,9 @@ select  task_key,
         max(t) updated,
         max(case when set_name = 'status' and tag_txt = 'done' then t else null end) completed,
         group_concat(case when set_name != 'tags' then set_name||':'||tag_txt else null end) props,
-        group_concat(case when set_name = 'tags' then tag_txt else '' end,'') tags
+        ','||group_concat(case when set_name != 'tags' then set_name||':'||tag_txt else null end)||',' props_match,
+        group_concat(case when set_name = 'tags' then tag_txt else '' end,'') tags,
+        ','||group_concat(case when set_name = 'tags' then tag_txt else '' end,'')||',' tags_match
 from vw_task_tags_last
 where tag_txt != ''
 group by 1

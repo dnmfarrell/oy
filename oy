@@ -1,19 +1,42 @@
 #!/bin/sh
 oy_list() {
-	OY_DAYS_AGO=0
+	OY_IFS="$IFS"
+	IFS=,
 	while getopts "d:p:t:" OY_LS_ARG; do
 		case "$OY_LS_ARG" in
 		"d") OY_DAYS_AGO="$OPTARG" ;;
-		"p") OY_PROP="and t.set_name = '${OPTARG%:*}' and t.tag_txt = '${OPTARG#*:}'" ;;
-		"t") OY_TAG="join vw_tags vt on vt.task_key = v.task_key and vt.tag = '$OPTARG'" ;;
+		"p")
+			for OY_P in $OPTARG; do
+				OY_PROP="$OY_PROP $OY_P_SEP props_match like '%,$OY_P,%'"
+				OY_P_SEP="and"
+			done
+			OY_PROP_CLAUSE="$OY_PROP_CLAUSE $OY_PROP_CLAUSE_SEP $OY_PROP"
+			OY_PROP_CLAUSE_SEP="or"
+			OY_PROP=
+			OY_P_SEP=
+			;;
+		"t")
+			for OY_T in $OPTARG; do
+				OY_TAG="$OY_TAG $OY_T_SEP tags_match like '%,$OY_T,%'"
+				OY_T_SEP="and"
+			done
+			OY_TAG_CLAUSE="$OY_TAG_CLAUSE $OY_TAG_CLAUSE_SEP $OY_TAG"
+			OY_TAG_CLAUSE_SEP="or"
+			OY_TAG=
+			OY_T_SEP=
+			;;
 		"?") oy_help && exit 1 ;;
 		esac
 	done
-	sqlite3 "$OY_DB" "select distinct v.task_key, v.description, v.props, v.tags
-	from vw_tasks v
-	$OY_TAG
-	join vw_task_tags_last t on t.task_key = v.task_key
-	where date(coalesce(completed, datetime('now')), 'localtime') = date('now', 'localtime', '-$OY_DAYS_AGO days') $OY_PROP order by 1 desc"
+	OY_PROP_CLAUSE="${OY_PROP_CLAUSE-props_match like '%,status:open,%'}"
+	OY_TAG_CLAUSE="${OY_TAG_CLAUSE-1=1}"
+	sqlite3 "$OY_DB" "select task_key, description, props, tags
+	from vw_tasks
+	where date(coalesce(completed, datetime('now')), 'localtime') = date('now', 'localtime', '-${OY_DAYS_AGO-0} days')
+		and ($OY_PROP_CLAUSE)
+		and ($OY_TAG_CLAUSE)
+	order by 1 desc"
+	IFS="$OY_IFS"
 }
 
 oy_compact() {
@@ -64,8 +87,12 @@ oy_new() {
 
 oy_prop() {
 	[ "$#" -lt 3 ] && oy_err_exit 'prop needs 3 or 4 arguments'
-	OY_SET=$(echo "$2" | sed "s/'/\\'/g")
-	OY_TXT=$(echo "$3" | sed "s/'/\\'/g")
+	OY_SET=$(echo "$2" | sed "s/[\t :,\"']//")
+	! [ "$2" = "$OY_SET" ] &&
+		oy_err_exit 'prop names cannot have whitespace, quotes, comma or colon'
+	OY_TXT=$(echo "$3" | sed "s/[\t :,\"']//")
+	! [ "$3" = "$OY_TXT" ] &&
+		oy_err_exit 'prop values cannot have whitespace, quotes, comma or colon'
 	OY_CAR=$(echo "$4" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt, cargo)
 	  values ('"$1"', '\'"$OY_SET"\'', '\'"$OY_TXT"\'',
@@ -85,10 +112,15 @@ oy_tag() {
 	OY_NEW_TAGS=$({
 		sqlite3 "$OY_DB" "select tag from vw_tags where task_key=$OY_QRY_KEY"
 		for OY_TAG in "$@"; do
+			OY_TAG_CHECK=$(echo "$OY_TAG" | sed "s/[\t :,\"']//")
+			! [ "$OY_TAG" = "$OY_TAG_CHECK" ] &&
+				oy_err_exit 'tags cannot have whitespace, quotes, comma or colon'
 			echo "$OY_TAG"
 		done
 	} | sort -u | awk 'BEGIN { sep="" } { printf "%s%s", sep, $0; sep="," }
-    END { printf "\n" }') && oy_prop "$OY_KEY" 'tags' "$OY_NEW_TAGS"
+    END { printf "\n" }') &&
+		sqlite3 "$OY_DB" "insert into task_tag (task_key, set_name, txt)
+					values ($OY_KEY, 'tags', '$OY_NEW_TAGS')"
 }
 
 oy_bootstrap() {
