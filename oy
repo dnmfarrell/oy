@@ -132,6 +132,27 @@ oy_bootstrap() {
 	[ -e "$OY_DB" ] || oy_new
 }
 
+oy_repeat() {
+	[ "$#" -lt 2 ] && oy_err_exit 'repeat requires at least 2 arguments'
+	OY_KEY="$1"
+	shift
+	if [ "$1" = "off" ]; then
+		sqlite3 "$OY_DB" "insert into task_tag (task_key, set_name, txt)
+		values ($OY_KEY, 'repeat', 'off')"
+		return
+	fi
+	OY_SCHEDULE=
+	OY_SEP=
+	for OY_T in "$@"; do
+		OY_T_CHECK=$(echo "$OY_T" | sed 's/[^0-9 %-]//g')
+		! [ "$OY_T_CHECK" = "$OY_T" ] && oy_err_exit "'$OY_T' is not a valid schedule"
+		OY_SCHEDULE="$OY_SCHEDULE$OY_SEP$OY_T"
+		OY_SEP=,
+	done
+	sqlite3 "$OY_DB" "insert into task_tag (task_key, set_name, txt, cargo)
+	values ($OY_KEY, 'repeat', 'on', '$OY_SCHEDULE')"
+}
+
 oy_dep_check() {
 	command -v "$1" >/dev/null && return 0
 	oy_err_exit "Didn't find the utility '$1' on this system"
@@ -154,7 +175,22 @@ Commands
   l|list [-d #] [-p name:value] [-t name] print tasks
   o|open <#> [# ...]                      re-open task(s)
   p|prop <#> <set> <name> [cargo]         add/update a property of a task
+  r|repeat <#> [off|schedule] ...         repeat task according to schedule(s)
   t|tag  [del] <#> <name> [name ...]      delete all and/or add tag(s) to a task
+
+  Repeat Schedules
+  A schedule is a string in the format YYYY-MM-DD [0-6] which is compared to
+  the current local date and day of the week. If the comparison succeeds, any
+  "done" task is flipped back to "open". The wildcard %% may also be used.
+  
+    %%          every day
+    %%-07-04 %%  every July 4th
+    %% 1        every Monday
+  
+  The repeat command accepts multiple schedules for a task, so to repeat task
+  50 on Saturdays and Sundays:
+  
+    oy r 50 '\''%% 6'\'' '\''%% 0'\''
 '
 }
 
@@ -174,6 +210,7 @@ oy_main() {
 	"l" | "list") oy_list "$@" ;;
 	"o" | "open") oy_open "$@" ;;
 	"p" | "prop") oy_prop "$@" ;;
+	"r" | "repeat") oy_repeat "$@" ;;
 	"t" | "tag") oy_tag "$@" ;;
 	*) oy_help ;;
 	esac
