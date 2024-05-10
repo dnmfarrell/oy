@@ -30,7 +30,7 @@ oy_list() {
 	done
 	OY_PROP_CLAUSE="${OY_PROP_CLAUSE-props_match like '%,status:open,%'}"
 	OY_TAG_CLAUSE="${OY_TAG_CLAUSE-1=1}"
-	sqlite3 "$OY_DB" "select task_key, description, props, tags
+	sqlite3 "$OY_DB" "select task_id, description, props, tags
 	from vw_tasks
 	where date(coalesce(completed, datetime('now')), 'localtime') = date('now', 'localtime', '-${OY_DAYS_AGO-0} days')
 		and ($OY_PROP_CLAUSE)
@@ -40,9 +40,9 @@ oy_list() {
 }
 
 oy_compact() {
-	sqlite3 "$OY_DB" 'delete from task_tag where ROWID in (
-		select a.ROWID from task_tag a
-		left join vw_task_tags_first_and_last v on v.key = a.key
+	sqlite3 "$OY_DB" 'delete from task where ROWID in (
+		select a.ROWID from task a
+		left join vw_task_sets_first_and_last v on v.key = a.ROWID
 		where v.key is null)'
 }
 
@@ -51,32 +51,32 @@ oy_add() {
 	for OY_D in "$@"; do
 		OY_DESC=$(echo "$OY_D" | sed "s/'/\\'/g")
 		sqlite3 "$OY_DB" '
-	insert into task_tag (txt, task_key, set_name, cargo)
-	select 1, coalesce(max(task_key),count(1))+1,'\''version'\'', '\'"$OY_DESC"\''
-  from task_tag
+	insert into task (set_value, task_id, set_name, cargo)
+	select 1, coalesce(max(task_id),count(1))+1,'\''version'\'', '\'"$OY_DESC"\''
+  from task
   union
-  select '\''open'\'', coalesce(max(task_key),count(1))+1, '\''status'\'', null
-  from task_tag'
+  select '\''open'\'', coalesce(max(task_id),count(1))+1, '\''status'\'', null
+  from task'
 	done
 }
 
 oy_edit() {
-	[ "$#" -eq 2 ] && oy_err_exit 'edit needs a task key and description'
+	[ "$#" -ne 2 ] && oy_err_exit 'edit needs a task id and description'
 	OY_KEY="$1"
 	OY_DESC=$(echo "$2" | sed "s/'/\\'/g")
 	sqlite3 "$OY_DB" '
-	insert into task_tag (txt, task_key, set_name, cargo)
+	insert into task (set_value, task_id, set_name, cargo)
   select *, '\'"$OY_DESC"\'' from vw_next_version
-  where task_key = '"$OY_KEY"
+  where task_id = '"$OY_KEY"
 }
 
 oy_done() {
-	[ "$#" -eq 0 ] && oy_err_exit 'done needs at least 1 task key'
+	[ "$#" -eq 0 ] && oy_err_exit 'done needs at least 1 task id'
 	for OY_KEY in "$@"; do oy_prop "$OY_KEY" 'status' 'done'; done
 }
 
 oy_open() {
-	[ "$#" -eq 0 ] && oy_err_exit 'open needs at least 1 task key'
+	[ "$#" -eq 0 ] && oy_err_exit 'open needs at least 1 task id'
 	for OY_KEY in "$@"; do oy_prop "$OY_KEY" 'status' 'open'; done
 }
 
@@ -94,7 +94,7 @@ oy_prop() {
 	! [ "$3" = "$OY_TXT" ] &&
 		oy_err_exit 'prop values cannot have whitespace, quotes, comma or colon'
 	OY_CAR=$(echo "$4" | sed "s/'/\\'/g")
-	sqlite3 "$OY_DB" 'insert into task_tag (task_key, set_name, txt, cargo)
+	sqlite3 "$OY_DB" 'insert into task (task_id, set_name, set_value, cargo)
 	  values ('"$1"', '\'"$OY_SET"\'', '\'"$OY_TXT"\'',
 		nullif('\'"$OY_CAR"\'','\'\''))'
 }
@@ -110,7 +110,7 @@ oy_tag() {
 	OY_KEY="$1"
 	shift
 	OY_NEW_TAGS=$({
-		sqlite3 "$OY_DB" "select tag from vw_tags where task_key=$OY_QRY_KEY"
+		sqlite3 "$OY_DB" "select tag from vw_tags where task_id=$OY_QRY_KEY"
 		for OY_TAG in "$@"; do
 			OY_TAG_CHECK=$(echo "$OY_TAG" | sed "s/[\t :,\"']//")
 			! [ "$OY_TAG" = "$OY_TAG_CHECK" ] &&
@@ -119,7 +119,7 @@ oy_tag() {
 		done
 	} | sort -u | awk 'BEGIN { sep="" } { printf "%s%s", sep, $0; sep="," }
     END { printf "\n" }') &&
-		sqlite3 "$OY_DB" "insert into task_tag (task_key, set_name, txt)
+		sqlite3 "$OY_DB" "insert into task (task_id, set_name, set_value)
 					values ($OY_KEY, 'tags', '$OY_NEW_TAGS')"
 }
 
@@ -137,7 +137,7 @@ oy_repeat() {
 	OY_KEY="$1"
 	shift
 	if [ "$1" = "off" ]; then
-		sqlite3 "$OY_DB" "insert into task_tag (task_key, set_name, txt)
+		sqlite3 "$OY_DB" "insert into task (task_id, set_name, set_value)
 		values ($OY_KEY, 'repeat', 'off')"
 		return
 	fi
@@ -149,7 +149,7 @@ oy_repeat() {
 		OY_SCHEDULE="$OY_SCHEDULE$OY_SEP$OY_T"
 		OY_SEP=,
 	done
-	sqlite3 "$OY_DB" "insert into task_tag (task_key, set_name, txt, cargo)
+	sqlite3 "$OY_DB" "insert into task (task_id, set_name, set_value, cargo)
 	values ($OY_KEY, 'repeat', 'on', '$OY_SCHEDULE')"
 }
 
@@ -196,7 +196,7 @@ Commands
 
 oy_main() {
 	oy_bootstrap
-	for OY_KEY in $(sqlite3 "$OY_DB" 'select task_key from vw_repeat_tasks'); do
+	for OY_KEY in $(sqlite3 "$OY_DB" 'select task_id from vw_repeat_tasks'); do
 		oy_open "$OY_KEY"
 	done
 	[ "$#" -eq 0 ] && oy_list && exit 0

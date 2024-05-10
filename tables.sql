@@ -1,11 +1,16 @@
-drop table if exists task_tag;
-create table task_tag (
-  key integer primary key autoincrement,
-  txt varchar(255) not null,
-  t timestamp default (datetime('now')),
-  cargo varchar(255),
-  task_key integer not null,
-  set_name integer not null
+drop table if exists task;
+create table task (
+  task_id integer not null,
+  set_name varchar(255) not null,
+  set_value varchar(255) not null,
+  cargo text,
+  t timestamp default (datetime('now'))
 );
-drop index if exists idx_task_set;
-create index idx_task_set on task_tag (task_key, set_name);
+drop index if exists idx_task;
+create index idx_task on task (
+  task_id,
+  set_name,
+  set_value,
+  cargo,
+  t
+);
