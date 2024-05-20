@@ -25,6 +25,7 @@ Usage
       p|prop <#> <set> <name> [cargo]         add/update a property of a task
       r|repeat <#> [off|schedule]             repeat task according to a schedule
       t|tag  [del] <#> <name> [name ...]      delete all and/or add tag(s) to a task
+    	v|view <#> [# ...]                      view all the task(s) properties
     
       Repeat Schedules
       A schedule comprises of up to three strings in the format:
