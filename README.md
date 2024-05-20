@@ -23,19 +23,21 @@ Usage
       l|list [-d #] [-p name:value] [-t name] print tasks
       o|open <#> [# ...]                      re-open task(s)
       p|prop <#> <set> <name> [cargo]         add/update a property of a task
-      r|repeat <#> [off|schedule] ...         repeat task according to schedule(s)
+      r|repeat <#> [off|schedule]             repeat task according to a schedule
       t|tag  [del] <#> <name> [name ...]      delete all and/or add tag(s) to a task
     
       Repeat Schedules
-      A schedule is a string in the format YYYY-MM-DD [0-6] which is compared to
-      the current local date and day of the week. If the comparison succeeds, any
-      "done" task is flipped back to "open". The wildcard % may also be used.
+      A schedule comprises of up to three strings in the format:
+     
+    	YYYY-MM-DD Date pattern
+    	0123456    Days of the week
+    	12345L     Nth day of the month ("L" = last)
+    
+    	The wildcard % may also be used:
       
-        %          every day
-        %-07-04 %  every July 4th
-        % 1        every Monday
-      
-      The repeat command accepts multiple schedules for a task, so to repeat task
-      50 on Saturdays and Sundays:
-      
-        oy r 50 '% 6' '% 0'
+        %          Every day
+        %-07-04    July 4th
+        % 1        Mondays
+    		% 12345    Mondays-Fridays
+    		% 5 L      The last Friday of the month
+    		% 3 1L     The first and last Wednesday of the month

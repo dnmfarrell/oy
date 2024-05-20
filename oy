@@ -1,7 +1,5 @@
 #!/bin/sh
 oy_list() {
-	OY_IFS="$IFS"
-	IFS=,
 	while getopts "d:p:t:" OY_LS_ARG; do
 		case "$OY_LS_ARG" in
 		"d") OY_DAYS_AGO="$OPTARG" ;;
@@ -16,10 +14,13 @@ oy_list() {
 			OY_P_SEP=
 			;;
 		"t")
+			OY_IFS="$IFS"
+			IFS=,
 			for OY_T in $OPTARG; do
 				OY_TAG="$OY_TAG $OY_T_SEP tags_match like '%,$OY_T,%'"
 				OY_T_SEP="and"
 			done
+			IFS="$OY_IFS"
 			OY_TAG_CLAUSE="$OY_TAG_CLAUSE $OY_TAG_CLAUSE_SEP $OY_TAG"
 			OY_TAG_CLAUSE_SEP="or"
 			OY_TAG=
@@ -36,7 +37,6 @@ oy_list() {
 		and ($OY_PROP_CLAUSE)
 		and ($OY_TAG_CLAUSE)
 	order by 1 desc"
-	IFS="$OY_IFS"
 }
 
 oy_compact() {
@@ -72,7 +72,13 @@ oy_edit() {
 
 oy_done() {
 	[ "$#" -eq 0 ] && oy_err_exit 'done needs at least 1 task id'
-	for OY_KEY in "$@"; do oy_prop "$OY_KEY" 'status' 'done'; done
+	for OY_KEY in "$@"; do
+		sqlite3 "$OY_DB" "insert into task (task_id, set_name, set_value, cargo)
+		 select task_id, 'status', 'done', group_concat(day)
+		 from (select * from vw_repeat_next union select $OY_KEY,null) x
+		 where task_id = $OY_KEY
+		 group by 1"
+	done
 }
 
 oy_open() {
@@ -141,16 +147,21 @@ oy_repeat() {
 		values ($OY_KEY, 'repeat', 'off')"
 		return
 	fi
-	OY_SCHEDULE=
-	OY_SEP=
-	for OY_T in "$@"; do
-		OY_T_CHECK=$(echo "$OY_T" | sed 's/[^0-9 %-]//g')
-		! [ "$OY_T_CHECK" = "$OY_T" ] && oy_err_exit "'$OY_T' is not a valid schedule"
-		OY_SCHEDULE="$OY_SCHEDULE$OY_SEP$OY_T"
-		OY_SEP=,
-	done
+	OY_DAT="${1-%}"
+	OY_CHK=$(echo "$OY_DAT" | sed 's/[^0-9%-]//g')
+	! [ "$OY_CHK" = "$OY_DAT" ] &&
+		oy_err_exit "'$OY_DAT' is not a valid date pattern"
+	OY_DOW="${2-%}"
+	OY_CHK=$(echo "$OY_DOW" | sed 's/[^0-6%]//g')
+	! [ "$OY_CHK" = "$OY_DOW" ] &&
+		oy_err_exit "Days of the week can only contain 0123456% (got: '$OY_DOW')"
+	OY_NTH="${3-%}"
+	OY_CHK=$(echo "$OY_NTH" | sed 's/[^0-5L%]//g')
+	! [ "$OY_CHK" = "$OY_NTH" ] &&
+		oy_err_exit "Nth day of the week can only contain 12345L (got: '$OY_NTH')"
+
 	sqlite3 "$OY_DB" "insert into task (task_id, set_name, set_value, cargo)
-	values ($OY_KEY, 'repeat', 'on', '$OY_SCHEDULE')"
+	values ($OY_KEY, 'repeat', 'on', '$OY_DAT $OY_DOW $OY_NTH')"
 }
 
 oy_dep_check() {
@@ -175,22 +186,24 @@ Commands
   l|list [-d #] [-p name:value] [-t name] print tasks
   o|open <#> [# ...]                      re-open task(s)
   p|prop <#> <set> <name> [cargo]         add/update a property of a task
-  r|repeat <#> [off|schedule] ...         repeat task according to schedule(s)
+  r|repeat <#> [off|schedule]             repeat task according to a schedule
   t|tag  [del] <#> <name> [name ...]      delete all and/or add tag(s) to a task
 
   Repeat Schedules
-  A schedule is a string in the format YYYY-MM-DD [0-6] which is compared to
-  the current local date and day of the week. If the comparison succeeds, any
-  "done" task is flipped back to "open". The wildcard %% may also be used.
+  A schedule comprises of up to three strings in the format:
+ 
+	YYYY-MM-DD Date pattern
+	0123456    Days of the week
+	12345L     Nth day of the month ("L" = last)
+
+	The wildcard %% may also be used:
   
-    %%          every day
-    %%-07-04 %%  every July 4th
-    %% 1        every Monday
-  
-  The repeat command accepts multiple schedules for a task, so to repeat task
-  50 on Saturdays and Sundays:
-  
-    oy r 50 '\''%% 6'\'' '\''%% 0'\''
+    %%          Every day
+    %%-07-04    July 4th
+    %% 1        Mondays
+		%% 12345    Mondays-Fridays
+		%% 5 L      The last Friday of the month
+		%% 3 1L     The first and last Wednesday of the month
 '
 }
 
